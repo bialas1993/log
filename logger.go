@@ -14,11 +14,6 @@ import (
 	"sync"
 )
 
-type severity int
-
-// Level describes the level of verbosity for info messages when using
-type Level int
-
 // LogFields for add context information
 type LogFields map[string]interface{}
 
@@ -32,22 +27,29 @@ type logger struct {
 	fatalLog    *log.Logger
 	closers     []io.Closer
 	initialized bool
-	level       Level
+	level       int
 	fields      LogFields
 }
 
-// Severity levels.
+// LogOption modify logger instance
+type LogOption func(*logger)
+
+// Output levels.
 const (
-	sDebug severity = iota
-	sInfo
-	sWarning
+	LevelFatal int = 1 << iota
+	LevelError
+	LevelWaring
+	LevelInfo
+	LevelDebug
+	LevelDefault = LevelFatal | LevelError | LevelWaring | LevelInfo
+)
+
+const (
+	sFatal uint8 = iota
 	sError
-	sFatal
-	LevelDebug  Level = Level(sDebug)
-	LevelInfo   Level = Level(sInfo)
-	LevelWaring Level = Level(sWarning)
-	LevelError  Level = Level(sError)
-	LevelFatal  Level = Level(sFatal)
+	sWarning
+	sInfo
+	sDebug
 )
 
 // Severity tags.
@@ -66,16 +68,6 @@ const (
 	tagWarning = "WARN : "
 	tagError   = "ERROR: "
 	tagFatal   = "FATAL: "
-
-	// WTF ?!?!?!?!?!?!?!
-	// Ldate         = 1 << iota // the date in the local time zone: 2009/01/23
-	// Ltime                     // the time in the local time zone: 01:23:23
-	// Lmicroseconds             // microsecond resolution: 01:23:23.123123.  assumes Ltime.
-	// Llongfile                 // full file name and line number: /a/b/c/d.go:23
-	// Lshortfile                // final file name element and line number: d.go:23. overrides Llongfile
-	// LUTC                      // if Ldate or Ltime is set, use UTC rather than the local time zone
-	// Lmsgprefix                // move the "prefix" from the beginning of the line to before the message
-	// LstdFlags     = Ldate | Ltime
 )
 
 const (
@@ -97,11 +89,13 @@ func initialize() {
 		errorLog:   log.New(os.Stderr, initText+tagError, flags),
 		fatalLog:   log.New(os.Stderr, initText+tagFatal, flags),
 		fields:     LogFields{},
+		level:      LevelDefault,
 	}
 }
 
 func init() {
 	initialize()
+	NewStdLogger()
 }
 
 // Init sets up logging and should be called before log functions, usually in
@@ -112,17 +106,25 @@ func init() {
 // logger.
 // If the logFile passed in also satisfies io.Closer, logFile.Close will be called
 // when closing the logger.
-func Init(name string, verbose, systemLog bool, logFile io.Writer) *logger {
+func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *logger {
 	var dl, il, wl, el io.Writer
 	var syslogErr error
+	dLogs := []io.Writer{}
+	iLogs := []io.Writer{}
+	wLogs := []io.Writer{}
+	eLogs := []io.Writer{}
+
 	if systemLog {
 		dl, il, wl, el, syslogErr = setup(name)
 	}
 
-	dLogs := []io.Writer{logFile}
-	iLogs := []io.Writer{logFile}
-	wLogs := []io.Writer{logFile}
-	eLogs := []io.Writer{logFile}
+	if logFile != nil {
+		dLogs = append(dLogs, logFile)
+		iLogs = append(iLogs, logFile)
+		wLogs = append(wLogs, logFile)
+		eLogs = append(eLogs, logFile)
+	}
+
 	if dl != nil {
 		dLogs = append(dLogs, il)
 	}
@@ -136,22 +138,26 @@ func Init(name string, verbose, systemLog bool, logFile io.Writer) *logger {
 		eLogs = append(eLogs, el)
 	}
 
-	// Windows services don't have stdout/stderr. Writes will fail, so try them last.
-	eLogs = append(eLogs, os.Stderr)
-	if verbose {
-		dLogs = append(dLogs, os.Stdout)
-		iLogs = append(iLogs, os.Stdout)
-		wLogs = append(wLogs, os.Stdout)
+	l := logger{
+		fields: LogFields{},
+		level:  LevelDefault,
 	}
 
-	l := logger{
-		debugLog:   log.New(io.MultiWriter(dLogs...), tagDebug, flags),
-		infoLog:    log.New(io.MultiWriter(iLogs...), tagInfo, flags),
-		warningLog: log.New(io.MultiWriter(wLogs...), tagWarning, flags),
-		errorLog:   log.New(io.MultiWriter(eLogs...), tagError, flags),
-		fatalLog:   log.New(io.MultiWriter(eLogs...), tagFatal, flags),
-		fields:     LogFields{},
+	for _, opt := range opts {
+		opt(&l)
 	}
+
+	// Windows services don't have stdout/stderr. Writes will fail, so try them last.
+	dLogs = append(dLogs, os.Stdout)
+	iLogs = append(iLogs, os.Stdout)
+	wLogs = append(wLogs, os.Stdout)
+	eLogs = append(eLogs, os.Stderr)
+
+	l.debugLog = log.New(io.MultiWriter(dLogs...), tagDebug, flags)
+	l.infoLog = log.New(io.MultiWriter(iLogs...), tagInfo, flags)
+	l.warningLog = log.New(io.MultiWriter(wLogs...), tagWarning, flags)
+	l.errorLog = log.New(io.MultiWriter(eLogs...), tagError, flags)
+	l.fatalLog = log.New(io.MultiWriter(eLogs...), tagFatal, flags)
 
 	for _, w := range []io.Writer{logFile, il, wl, el} {
 		if c, ok := w.(io.Closer); ok && c != nil {
@@ -174,36 +180,16 @@ func Init(name string, verbose, systemLog bool, logFile io.Writer) *logger {
 	return &l
 }
 
-func New() Logger {
-	dLogs := []io.Writer{}
-	iLogs := []io.Writer{}
-	wLogs := []io.Writer{}
-	eLogs := []io.Writer{}
+func NewSyslogLogger(name string, opts ...LogOption) Logger {
+	return new(name, true, nil)
+}
 
-	// Windows services don't have stdout/stderr. Writes will fail, so try them last.
-	dLogs = append(dLogs, os.Stdout)
-	iLogs = append(iLogs, os.Stdout)
-	wLogs = append(wLogs, os.Stdout)
-	eLogs = append(eLogs, os.Stderr)
+func NewStdLogger(opts ...LogOption) Logger {
+	return new("", false, nil)
+}
 
-	l := logger{
-		debugLog:   log.New(io.MultiWriter(dLogs...), tagDebug, flags),
-		infoLog:    log.New(io.MultiWriter(iLogs...), tagInfo, flags),
-		warningLog: log.New(io.MultiWriter(wLogs...), tagWarning, flags),
-		errorLog:   log.New(io.MultiWriter(eLogs...), tagError, flags),
-		fatalLog:   log.New(io.MultiWriter(eLogs...), tagFatal, flags),
-		fields:     LogFields{},
-	}
-
-	l.initialized = true
-
-	logLock.Lock()
-	defer logLock.Unlock()
-	if !defaultLogger.initialized {
-		defaultLogger = &l
-	}
-
-	return &l
+func New(out io.Writer, opts ...LogOption) Logger {
+	return new("", false, nil)
 }
 
 // Close closes the default logger.
@@ -247,10 +233,10 @@ func (l *logger) formatFields() string {
 	return fieldsStr
 }
 
-func (l *logger) output(s severity, depth int, txt string) {
+func (l *logger) output(s uint8, depth int, txt string) {
 	defer l.clear()
 
-	if s >= severity(l.level) {
+	if l.level&(1<<s) != 0 {
 		buf := bytes.NewBufferString(l.formatFields())
 		buf.WriteString(txt)
 
@@ -284,7 +270,7 @@ type Logger interface {
 	Fatalf(format string, v ...interface{})
 	Error(v ...interface{})
 	Errorf(format string, v ...interface{})
-	SetLevel(lvl Level)
+	SetLevel(lvl int)
 	SetFlags(flag int)
 	With(fields LogFields) Logger
 	Close()
@@ -373,9 +359,8 @@ func (l *logger) Errorf(format string, v ...interface{}) {
 }
 
 // SetLevel sets the logger verbosity level for verbose info logging.
-func (l *logger) SetLevel(lvl Level) {
+func (l *logger) SetLevel(lvl int) {
 	l.level = lvl
-	l.output(sInfo, 0, fmt.Sprintf("Info verbosity set to %d", lvl))
 }
 
 func (l *logger) SetFlags(flag int) {
@@ -403,7 +388,7 @@ func SetFlags(flag int) {
 
 // SetLevel sets the verbosity level for verbose info logging in the
 // default logger.
-func SetLevel(lvl Level) {
+func SetLevel(lvl int) {
 	defaultLogger.SetLevel(lvl)
 }
 
@@ -473,6 +458,7 @@ func Errorf(format string, v ...interface{}) {
 	defaultLogger.output(sError, 0, fmt.Sprintf(format, v...))
 }
 
+// With uses the default logger and store context fields for log
 func With(fields LogFields) Logger {
 	defaultLogger.fields = fields
 	return defaultLogger

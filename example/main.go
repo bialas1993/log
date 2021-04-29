@@ -2,34 +2,20 @@ package main
 
 import (
 	"github.com/bialas1993/log"
-	// logger "log"
 )
 
 func main() {
-	logger := log.New()
+	logger := log.NewSyslogLogger("white")
 
 	println(
-		log.Ldate,
-		log.Ltime,
-		log.Lmicroseconds,
-		log.Lshortfile,
-		log.LUTC,
-		log.Ldate,
-		log.Llongfile,
+		log.LevelDebug,
+		log.LevelInfo,
+		log.LevelWaring,
+		log.LevelError,
+		log.LevelFatal,
 	)
 
-	// println(
-	// 	logger.Ldate,
-	// 	logger.Ltime,
-	// 	logger.Lmicroseconds,
-	// 	logger.Lshortfile,
-	// 	logger.LUTC,
-	// 	logger.Ldate,
-	// 	logger.Llongfile,
-	// )
-
-	logger.SetFlags(log.LstdFlags)
-	logger.SetLevel(log.LevelError)
+	logger.SetLevel(log.LevelDefault | log.LevelDebug)
 
 	logger.Debug("debug")
 	logger.With(log.LogFields{

@@ -51,14 +51,14 @@ func TestLoggingBeforeInit(t *testing.T) {
 
 func TestInit(t *testing.T) {
 	var buf1 bytes.Buffer
-	l1 := Init("test1", false, false, &buf1)
+	l1 := New(&buf1)
 	if !reflect.DeepEqual(l1, defaultLogger) {
 		t.Fatal("defaultLogger does not match logger returned by Init")
 	}
 
 	// Subsequent runs of Init shouldn't change defaultLogger.
 	var buf2 bytes.Buffer
-	l2 := Init("test2", false, false, &buf2)
+	l2 := New(&buf2)
 	if !reflect.DeepEqual(l1, defaultLogger) {
 		t.Error("defaultLogger should not have changed")
 	}
@@ -66,13 +66,12 @@ func TestInit(t *testing.T) {
 	// Check log output.
 	l1.Info("logger #1")
 	l2.Info("logger #2")
-	defaultLogger.Info("default logger")
 
 	tests := []struct {
 		out  string
 		want int
 	}{
-		{buf1.String(), 2},
+		{buf1.String(), 1},
 		{buf2.String(), 1},
 	}
 
