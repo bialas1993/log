@@ -16,18 +16,38 @@ import (
 
 type severity int
 
+// Level describes the level of verbosity for info messages when using
+type Level int
+
+// LogFields for add context information
+type LogFields map[string]interface{}
+
+// A logger represents an active logging object. Multiple loggers can be used
+// simultaneously even if they are using the same same writers.
+type logger struct {
+	debugLog    *log.Logger
+	infoLog     *log.Logger
+	warningLog  *log.Logger
+	errorLog    *log.Logger
+	fatalLog    *log.Logger
+	closers     []io.Closer
+	initialized bool
+	level       Level
+	fields      LogFields
+}
+
 // Severity levels.
 const (
-	LevelDebug Level = iota
-	LevelInfo
-	LevelWaring
-	LevelError
-	LevelFatal
 	sDebug severity = iota
 	sInfo
 	sWarning
 	sError
 	sFatal
+	LevelDebug  Level = Level(sDebug)
+	LevelInfo   Level = Level(sInfo)
+	LevelWaring Level = Level(sWarning)
+	LevelError  Level = Level(sError)
+	LevelFatal  Level = Level(sFatal)
 )
 
 // Severity tags.
@@ -71,7 +91,7 @@ var (
 // initialize resets defaultLogger.  Which allows tests to reset environment.
 func initialize() {
 	defaultLogger = &logger{
-		debugLog:   log.New(os.Stderr, initText+tagInfo, flags),
+		debugLog:   log.New(os.Stderr, initText+tagDebug, flags),
 		infoLog:    log.New(os.Stderr, initText+tagInfo, flags),
 		warningLog: log.New(os.Stderr, initText+tagWarning, flags),
 		errorLog:   log.New(os.Stderr, initText+tagError, flags),
@@ -189,27 +209,6 @@ func New() Logger {
 // Close closes the default logger.
 func Close() {
 	defaultLogger.Close()
-}
-
-// Level describes the level of verbosity for info messages when using
-// V style logging. See documentation for the V function for more information.
-type Level int
-
-// LogFields for add context information
-type LogFields map[string]interface{}
-
-// A logger represents an active logging object. Multiple loggers can be used
-// simultaneously even if they are using the same same writers.
-type logger struct {
-	debugLog    *log.Logger
-	infoLog     *log.Logger
-	warningLog  *log.Logger
-	errorLog    *log.Logger
-	fatalLog    *log.Logger
-	closers     []io.Closer
-	initialized bool
-	level       Level
-	fields      LogFields
 }
 
 func (l *logger) clear() {

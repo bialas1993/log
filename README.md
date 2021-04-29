@@ -26,36 +26,36 @@ func main() {
 
   lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0660)
   if err != nil {
-    logger.Fatalf("Failed to open log file: %v", err)
+    log.Fatalf("Failed to open log file: %v", err)
   }
   defer lf.Close()
 
-  defer logger.Init("LoggerExample", *verbose, true, lf).Close()
+  defer log.Init("LoggerExample", *verbose, true, lf).Close()
 
-  logger.Info("I'm about to do something!")
+  log.Info("I'm about to do something!")
   if err := doSomething(); err != nil {
-    logger.Errorf("Error running doSomething: %v", err)
+    log.Errorf("Error running doSomething: %v", err)
   }
 }
 ```
 
 ## Custom Format ##
 
-| Code                                 | Example                                                  |
-|--------------------------------------|----------------------------------------------------------|
-| `logger.SetFlags(log.Ldate)`         | ERROR: 2018/11/11 Error running Foobar: message          |
-| `logger.SetFlags(log.Ltime)`         | ERROR: 09:42:45 Error running Foobar: message            |
-| `logger.SetFlags(log.Lmicroseconds)` | ERROR: 09:42:50.776015 Error running Foobar: message     |
-| `logger.SetFlags(log.Llongfile)`     | ERROR: /src/main.go:31: Error running Foobar: message    |
-| `logger.SetFlags(log.Lshortfile)`    | ERROR: main.go:31: Error running Foobar: message         |
-| `logger.SetFlags(log.LUTC)`          | ERROR: Error running Foobar: message                     |
-| `logger.SetFlags(log.LstdFlags)`     | ERROR: 2018/11/11 09:43:12 Error running Foobar: message |
+| Code                              | Example                                                  |
+|-----------------------------------|----------------------------------------------------------|
+| `log.SetFlags(log.Ldate)`         | ERROR: 2018/11/11 Error running Foobar: message          |
+| `log.SetFlags(log.Ltime)`         | ERROR: 09:42:45 Error running Foobar: message            |
+| `log.SetFlags(log.Lmicroseconds)` | ERROR: 09:42:50.776015 Error running Foobar: message     |
+| `log.SetFlags(log.Llongfile)`     | ERROR: /src/main.go:31: Error running Foobar: message    |
+| `log.SetFlags(log.Lshortfile)`    | ERROR: main.go:31: Error running Foobar: message         |
+| `log.SetFlags(log.LUTC)`          | ERROR: Error running Foobar: message                     |
+| `log.SetFlags(log.LstdFlags)`     | ERROR: 2018/11/11 09:43:12 Error running Foobar: message |
 
 ```go
 func main() {
     lf, err := os.OpenFile(logPath, …, 0660)
-    defer logger.Init("foo", *verbose, true, lf).Close()
-    logger.SetFlags(log.LstdFlags)
+    defer log.Init("foo", *verbose, true, lf).Close()
+    log.SetFlags(log.LstdFlags)
 }
 ```
 

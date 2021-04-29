@@ -5,8 +5,6 @@ import (
 	// logger "log"
 )
 
-const logPath = "/tmp/example.log"
-
 func main() {
 	logger := log.New()
 
@@ -31,6 +29,8 @@ func main() {
 	// )
 
 	logger.SetFlags(log.LstdFlags)
+	logger.SetLevel(log.LevelError)
+
 	logger.Debug("debug")
 	logger.With(log.LogFields{
 		"asd":   "bsd",
