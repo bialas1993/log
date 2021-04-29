@@ -98,7 +98,7 @@ func init() {
 	NewStdLogger()
 }
 
-// Init sets up logging and should be called before log functions, usually in
+// new sets up logging and should be called before log functions, usually in
 // the caller's main(). Default log functions can be called before Init(), but log
 // output will only go to stderr (along with a warning).
 // The first call to Init populates the default logger and returns the
@@ -189,7 +189,7 @@ func NewStdLogger(opts ...LogOption) Logger {
 }
 
 func New(out io.Writer, opts ...LogOption) Logger {
-	return new("", false, nil)
+	return new("", false, out)
 }
 
 // Close closes the default logger.

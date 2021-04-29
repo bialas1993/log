@@ -66,12 +66,13 @@ func TestInit(t *testing.T) {
 	// Check log output.
 	l1.Info("logger #1")
 	l2.Info("logger #2")
+	defaultLogger.Info("logger default")
 
 	tests := []struct {
 		out  string
 		want int
 	}{
-		{buf1.String(), 1},
+		{buf1.String(), 2},
 		{buf2.String(), 1},
 	}
 
