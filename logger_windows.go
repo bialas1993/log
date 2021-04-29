@@ -17,6 +17,8 @@ type writer struct {
 // Write sends a log message to the Event Log.
 func (w *writer) Write(b []byte) (int, error) {
 	switch w.pri {
+	case sDebug:
+		return len(b), w.el.Debug(1, string(b))
 	case sInfo:
 		return len(b), w.el.Info(1, string(b))
 	case sWarning:
@@ -51,18 +53,22 @@ func newW(pri severity, src string) (*writer, error) {
 	}, nil
 }
 
-func setup(src string) (*writer, *writer, *writer, error) {
+func setup(src string) (*writer, *writer, *writer, *writer, error) {
+	debugL, err := newW(sDebug, src)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	infoL, err := newW(sInfo, src)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	warningL, err := newW(sWarning, src)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	errL, err := newW(sError, src)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return infoL, warningL, errL, nil
+	return debugL, infoL, warningL, errL, nil
 }

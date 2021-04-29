@@ -31,7 +31,7 @@ func main() {
 	// )
 
 	logger.SetFlags(log.LstdFlags)
-	logger.SetLevel(5) //TODO
+	logger.Debug("debug")
 	logger.With(log.LogFields{
 		"asd":   "bsd",
 		"lorem": "ipsum",
@@ -40,7 +40,7 @@ func main() {
 			A string
 		}{"aaaaaa"},
 	}).Info("asda")
-	logger.Error("error")
 	logger.Warning("warn")
-
+	logger.Error("error")
+	logger.Fatal("fatal")
 }
