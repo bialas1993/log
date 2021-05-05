@@ -4,13 +4,10 @@
 package log
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"sort"
-	"strings"
 	"sync"
 )
 
@@ -25,9 +22,11 @@ type logger struct {
 	warningLog  *log.Logger
 	errorLog    *log.Logger
 	fatalLog    *log.Logger
+	formatter   Formatter
 	closers     []io.Closer
 	initialized bool
 	level       int
+	flags       int
 	fields      LogFields
 }
 
@@ -54,6 +53,7 @@ const (
 
 // Severity tags.
 const (
+	// Ltest = 0 //check iota increments
 	Ldate         = 1 << iota // the date in the local time zone: 2009/01/23
 	Ltime                     // the time in the local time zone: 01:23:23
 	Lmicroseconds             // microsecond resolution: 01:23:23.123123.  assumes Ltime.
@@ -62,6 +62,7 @@ const (
 	LUTC                      // if Ldate or Ltime is set, use UTC rather than the local time zone
 	Lmsgprefix                // move the "prefix" from the beginning of the line to before the message
 	LstdFlags     = Ldate | Ltime
+	Ldisable      = 0
 
 	tagDebug   = "DEBUG: "
 	tagInfo    = "INFO : "
@@ -71,25 +72,33 @@ const (
 )
 
 const (
-	flags    = log.Ldate | log.Lmicroseconds | log.Lshortfile
 	initText = "ERROR: Logging before logger.Init.\n"
 )
 
 var (
 	logLock       sync.Mutex
 	defaultLogger *logger
+	levelMap      = map[uint8]string{
+		sFatal:   "fatal",
+		sError:   "error",
+		sWarning: "warning",
+		sInfo:    "info",
+		sDebug:   "debug",
+	}
 )
 
 // initialize resets defaultLogger.  Which allows tests to reset environment.
 func initialize() {
 	defaultLogger = &logger{
-		debugLog:   log.New(os.Stderr, initText+tagDebug, flags),
-		infoLog:    log.New(os.Stderr, initText+tagInfo, flags),
-		warningLog: log.New(os.Stderr, initText+tagWarning, flags),
-		errorLog:   log.New(os.Stderr, initText+tagError, flags),
-		fatalLog:   log.New(os.Stderr, initText+tagFatal, flags),
+		debugLog:   log.New(os.Stderr, initText+tagDebug, Ldate|Lmicroseconds|Lshortfile),
+		infoLog:    log.New(os.Stderr, initText+tagInfo, Ldate|Lmicroseconds|Lshortfile),
+		warningLog: log.New(os.Stderr, initText+tagWarning, Ldate|Lmicroseconds|Lshortfile),
+		errorLog:   log.New(os.Stderr, initText+tagError, Ldate|Lmicroseconds|Lshortfile),
+		fatalLog:   log.New(os.Stderr, initText+tagFatal, Ldate|Lmicroseconds|Lshortfile),
+		formatter:  StdFormatter{},
 		fields:     LogFields{},
 		level:      LevelDefault,
+		flags:      LstdFlags,
 	}
 }
 
@@ -98,10 +107,8 @@ func init() {
 	NewStdLogger()
 }
 
-// new sets up logging and should be called before log functions, usually in
-// the caller's main(). Default log functions can be called before Init(), but log
-// output will only go to stderr (along with a warning).
-// The first call to Init populates the default logger and returns the
+// new sets up logging and should be called before log functions.
+// The first call to new populates the default logger and returns the
 // generated logger, subsequent calls to Init will only return the generated
 // logger.
 // If the logFile passed in also satisfies io.Closer, logFile.Close will be called
@@ -139,8 +146,10 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 	}
 
 	l := logger{
-		fields: LogFields{},
-		level:  LevelDefault,
+		formatter: StdFormatter{},
+		flags:     LstdFlags,
+		fields:    LogFields{},
+		level:     LevelDefault,
 	}
 
 	for _, opt := range opts {
@@ -153,11 +162,11 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 	wLogs = append(wLogs, os.Stdout)
 	eLogs = append(eLogs, os.Stderr)
 
-	l.debugLog = log.New(io.MultiWriter(dLogs...), tagDebug, flags)
-	l.infoLog = log.New(io.MultiWriter(iLogs...), tagInfo, flags)
-	l.warningLog = log.New(io.MultiWriter(wLogs...), tagWarning, flags)
-	l.errorLog = log.New(io.MultiWriter(eLogs...), tagError, flags)
-	l.fatalLog = log.New(io.MultiWriter(eLogs...), tagFatal, flags)
+	l.debugLog = log.New(io.MultiWriter(dLogs...), tagDebug, l.flags)
+	l.infoLog = log.New(io.MultiWriter(iLogs...), tagInfo, l.flags)
+	l.warningLog = log.New(io.MultiWriter(wLogs...), tagWarning, l.flags)
+	l.errorLog = log.New(io.MultiWriter(eLogs...), tagError, l.flags)
+	l.fatalLog = log.New(io.MultiWriter(eLogs...), tagFatal, l.flags)
 
 	for _, w := range []io.Writer{logFile, il, wl, el} {
 		if c, ok := w.(io.Closer); ok && c != nil {
@@ -180,16 +189,24 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 	return &l
 }
 
+// NewSyslogLogger with logging to system log
 func NewSyslogLogger(name string, opts ...LogOption) Logger {
-	return new(name, true, nil)
+	return new(name, true, nil, opts...)
 }
 
+// NewStdLogger standard console logging
 func NewStdLogger(opts ...LogOption) Logger {
-	return new("", false, nil)
+	return new("", false, nil, opts...)
 }
 
+// NewJsonLogger with json formatter
+func NewJsonLogger(opts ...LogOption) Logger {
+	return new("", false, nil, append([]LogOption{WithFormatter(JsonFormatter{})}, opts...)...)
+}
+
+// New create standard logger instance
 func New(out io.Writer, opts ...LogOption) Logger {
-	return new("", false, out)
+	return new("", false, out, opts...)
 }
 
 // Close closes the default logger.
@@ -197,62 +214,52 @@ func Close() {
 	defaultLogger.Close()
 }
 
-func (l *logger) clear() {
-	l.fields = LogFields{}
+func WithFormatter(f Formatter) LogOption {
+	return func(l *logger) {
+		l.formatter = f
+	}
 }
 
-func (l *logger) formatFields() string {
-	fieldsStr := ""
-
-	keys := make([]string, len(l.fields))
-	i := 0
-	for field := range l.fields {
-		keys[i] = field
-		i++
+func (l LogFields) Add(newFields LogFields) LogFields {
+	if len(l) == 0 {
+		return newFields
+	} else if len(newFields) == 0 {
+		return l
 	}
 
-	sort.Strings(keys)
-
-	for _, key := range keys {
-		var valueStr string
-		value := l.fields[key]
-
-		if stringer, ok := value.(fmt.Stringer); ok {
-			valueStr = stringer.String()
-		} else {
-			valueStr = fmt.Sprintf("%v", value)
-		}
-
-		if strings.Contains(valueStr, " ") {
-			valueStr = `"` + valueStr + `"`
-		}
-
-		fieldsStr += key + "=" + valueStr + " "
+	resultFields := make(LogFields, len(l)+len(newFields))
+	for field, value := range l {
+		resultFields[field] = value
 	}
 
-	return fieldsStr
+	for field, value := range newFields {
+		resultFields[field] = value
+	}
+
+	return resultFields
+}
+
+func (l *logger) clear() {
+	l.fields = LogFields{}
 }
 
 func (l *logger) output(s uint8, depth int, txt string) {
 	defer l.clear()
 
 	if l.level&(1<<s) != 0 {
-		buf := bytes.NewBufferString(l.formatFields())
-		buf.WriteString(txt)
-
 		logLock.Lock()
 		defer logLock.Unlock()
 		switch s {
 		case sDebug:
-			l.debugLog.Output(3+depth, buf.String())
+			l.debugLog.Output(3+depth, txt)
 		case sInfo:
-			l.infoLog.Output(3+depth, buf.String())
+			l.infoLog.Output(3+depth, txt)
 		case sWarning:
-			l.warningLog.Output(3+depth, buf.String())
+			l.warningLog.Output(3+depth, txt)
 		case sError:
-			l.errorLog.Output(3+depth, buf.String())
+			l.errorLog.Output(3+depth, txt)
 		case sFatal:
-			l.fatalLog.Output(3+depth, buf.String())
+			l.fatalLog.Output(3+depth, txt)
 		default:
 			panic(fmt.Sprintln("unrecognized severity:", s))
 		}
@@ -297,43 +304,43 @@ func (l *logger) Close() {
 // Debug logs with the Debug severity.
 // Arguments are handled in the manner of fmt.Print.
 func (l *logger) Debug(v ...interface{}) {
-	l.output(sDebug, 0, fmt.Sprint(v...))
+	l.output(sDebug, 0, string(l.formatter.Output(l.flags, levelMap[sDebug], l.fields, fmt.Sprint(v...))))
 }
 
 // Debugf logs with the Debug severity.
 // Arguments are handled in the manner of fmt.Printf.
 func (l *logger) Debugf(format string, v ...interface{}) {
-	l.output(sDebug, 0, fmt.Sprintf(format, v...))
+	l.output(sDebug, 0, string(l.formatter.Output(l.flags, levelMap[sDebug], l.fields, fmt.Sprint(v...))))
 }
 
 // Info logs with the Info severity.
 // Arguments are handled in the manner of fmt.Print.
 func (l *logger) Info(v ...interface{}) {
-	l.output(sInfo, 0, fmt.Sprint(v...))
+	l.output(sInfo, 0, string(l.formatter.Output(l.flags, levelMap[sInfo], l.fields, fmt.Sprint(v...))))
 }
 
 // Infof logs with the Info severity.
 // Arguments are handled in the manner of fmt.Printf.
 func (l *logger) Infof(format string, v ...interface{}) {
-	l.output(sInfo, 0, fmt.Sprintf(format, v...))
+	l.output(sInfo, 0, string(l.formatter.Output(l.flags, levelMap[sInfo], l.fields, fmt.Sprint(v...))))
 }
 
 // Warning logs with the Warning severity.
 // Arguments are handled in the manner of fmt.Print.
 func (l *logger) Warning(v ...interface{}) {
-	l.output(sWarning, 0, fmt.Sprint(v...))
+	l.output(sWarning, 0, string(l.formatter.Output(l.flags, levelMap[sWarning], l.fields, fmt.Sprint(v...))))
 }
 
 // Warningf logs with the Warning severity.
 // Arguments are handled in the manner of fmt.Printf.
 func (l *logger) Warningf(format string, v ...interface{}) {
-	l.output(sWarning, 0, fmt.Sprintf(format, v...))
+	l.output(sWarning, 0, string(l.formatter.Output(l.flags, levelMap[sWarning], l.fields, fmt.Sprint(v...))))
 }
 
 // Fatal logs with the Fatal severity, and ends with os.Exit(1).
 // Arguments are handled in the manner of fmt.Print.
 func (l *logger) Fatal(v ...interface{}) {
-	l.output(sFatal, 0, fmt.Sprint(v...))
+	l.output(sFatal, 0, string(l.formatter.Output(l.flags, levelMap[sFatal], l.fields, fmt.Sprint(v...))))
 	l.Close()
 	os.Exit(1)
 }
@@ -341,7 +348,7 @@ func (l *logger) Fatal(v ...interface{}) {
 // Fatalf logs with the Fatal severity, and ends with os.Exit(1).
 // Arguments are handled in the manner of fmt.Printf.
 func (l *logger) Fatalf(format string, v ...interface{}) {
-	l.output(sFatal, 0, fmt.Sprintf(format, v...))
+	l.output(sFatal, 0, string(l.formatter.Output(l.flags, levelMap[sFatal], l.fields, fmt.Sprint(v...))))
 	l.Close()
 	os.Exit(1)
 }
@@ -349,13 +356,13 @@ func (l *logger) Fatalf(format string, v ...interface{}) {
 // Error logs with the ERROR severity.
 // Arguments are handled in the manner of fmt.Print.
 func (l *logger) Error(v ...interface{}) {
-	l.output(sError, 0, fmt.Sprint(v...))
+	l.output(sError, 0, string(l.formatter.Output(l.flags, levelMap[sError], l.fields, fmt.Sprint(v...))))
 }
 
 // Errorf logs with the Error severity.
 // Arguments are handled in the manner of fmt.Printf.
 func (l *logger) Errorf(format string, v ...interface{}) {
-	l.output(sError, 0, fmt.Sprintf(format, v...))
+	l.output(sError, 0, string(l.formatter.Output(l.flags, levelMap[sError], l.fields, fmt.Sprint(v...))))
 }
 
 // SetLevel sets the logger verbosity level for verbose info logging.
@@ -364,6 +371,7 @@ func (l *logger) SetLevel(lvl int) {
 }
 
 func (l *logger) SetFlags(flag int) {
+	l.flags = flag
 	l.debugLog.SetFlags(flag)
 	l.infoLog.SetFlags(flag)
 	l.warningLog.SetFlags(flag)
@@ -373,17 +381,14 @@ func (l *logger) SetFlags(flag int) {
 
 // With sets context fields
 func (l *logger) With(fields LogFields) Logger {
-	l.fields = fields
+	l.fields = l.fields.Add(fields)
+
 	return l
 }
 
 // SetFlags sets the output flags for the logger.
 func SetFlags(flag int) {
-	defaultLogger.debugLog.SetFlags(flag)
-	defaultLogger.infoLog.SetFlags(flag)
-	defaultLogger.warningLog.SetFlags(flag)
-	defaultLogger.errorLog.SetFlags(flag)
-	defaultLogger.fatalLog.SetFlags(flag)
+	defaultLogger.SetFlags(flag)
 }
 
 // SetLevel sets the verbosity level for verbose info logging in the
@@ -395,44 +400,44 @@ func SetLevel(lvl int) {
 // Debug uses the default logger, logs with Debug severity.
 // Arguments are handled in the manner of fmt.Print.
 func Debug(v ...interface{}) {
-	defaultLogger.output(sDebug, 0, fmt.Sprint(v...))
+	defaultLogger.output(sDebug, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sDebug], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // Debugf uses the default logger, logs with Debug severity.
 // Arguments are handled in the manner of fmt.Printf.
 func Debugf(format string, v ...interface{}) {
-	defaultLogger.output(sDebug, 0, fmt.Sprintf(format, v...))
+	defaultLogger.output(sDebug, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sDebug], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // Info uses the default logger and logs with the Info severity.
 // Arguments are handled in the manner of fmt.Print.
 func Info(v ...interface{}) {
-	defaultLogger.output(sInfo, 0, fmt.Sprint(v...))
+	defaultLogger.output(sInfo, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sInfo], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // Infof uses the default logger and logs with the Info severity.
 // Arguments are handled in the manner of fmt.Printf.
 func Infof(format string, v ...interface{}) {
-	defaultLogger.output(sInfo, 0, fmt.Sprintf(format, v...))
+	defaultLogger.output(sInfo, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sInfo], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // Warning uses the default logger and logs with the Warning severity.
 // Arguments are handled in the manner of fmt.Print.
 func Warning(v ...interface{}) {
-	defaultLogger.output(sWarning, 0, fmt.Sprint(v...))
+	defaultLogger.output(sWarning, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sWarning], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // Warningf uses the default logger and logs with the Warning severity.
 // Arguments are handled in the manner of fmt.Printf.
 func Warningf(format string, v ...interface{}) {
-	defaultLogger.output(sWarning, 0, fmt.Sprintf(format, v...))
+	defaultLogger.output(sWarning, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sWarning], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // Fatal uses the default logger, logs with the Fatal severity,
 // and ends with os.Exit(1).
 // Arguments are handled in the manner of fmt.Print.
 func Fatal(v ...interface{}) {
-	defaultLogger.output(sFatal, 0, fmt.Sprint(v...))
+	defaultLogger.output(sFatal, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sFatal], defaultLogger.fields, fmt.Sprint(v...))))
 	defaultLogger.Close()
 	os.Exit(1)
 }
@@ -441,7 +446,7 @@ func Fatal(v ...interface{}) {
 // and ends with os.Exit(1).
 // Arguments are handled in the manner of fmt.Printf.
 func Fatalf(format string, v ...interface{}) {
-	defaultLogger.output(sFatal, 0, fmt.Sprintf(format, v...))
+	defaultLogger.output(sFatal, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sFatal], defaultLogger.fields, fmt.Sprint(v...))))
 	defaultLogger.Close()
 	os.Exit(1)
 }
@@ -449,17 +454,17 @@ func Fatalf(format string, v ...interface{}) {
 // Error uses the default logger and logs with the Error severity.
 // Arguments are handled in the manner of fmt.Print.
 func Error(v ...interface{}) {
-	defaultLogger.output(sError, 0, fmt.Sprint(v...))
+	defaultLogger.output(sError, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sError], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // Errorf uses the default logger and logs with the Error severity.
 // Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, v ...interface{}) {
-	defaultLogger.output(sError, 0, fmt.Sprintf(format, v...))
+	defaultLogger.output(sError, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[sError], defaultLogger.fields, fmt.Sprint(v...))))
 }
 
 // With uses the default logger and store context fields for log
 func With(fields LogFields) Logger {
-	defaultLogger.fields = fields
+	defaultLogger.With(fields)
 	return defaultLogger
 }

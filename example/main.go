@@ -5,17 +5,10 @@ import (
 )
 
 func main() {
-	logger := log.NewSyslogLogger("white")
-
-	println(
-		log.LevelDebug,
-		log.LevelInfo,
-		log.LevelWaring,
-		log.LevelError,
-		log.LevelFatal,
-	)
-
+	logger := log.NewJsonLogger()
+	// logger := log.NewStdLogger()
 	logger.SetLevel(log.LevelDefault | log.LevelDebug)
+	logger.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	logger.Debug("debug")
 	logger.With(log.LogFields{
@@ -25,7 +18,7 @@ func main() {
 		"struct": struct {
 			A string
 		}{"aaaaaa"},
-	}).Info("asda")
+	}).Info("info")
 	logger.Warning("warn")
 	logger.Error("error")
 	logger.Fatal("fatal")
