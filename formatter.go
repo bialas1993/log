@@ -12,7 +12,10 @@ import (
 )
 
 type Formatter interface {
-	Output(flags int, lvl string, fields LogFields, msg string) []byte
+	// HasSettings method should return value to decide about override logger prefixes and log level flags
+	HasSettings() bool
+	// Output method should create a formatted string to display
+	Output(flags int, lvl string, fields LogFields, msg string) string
 }
 
 type StdFormatter struct{}
@@ -49,11 +52,15 @@ func (f StdFormatter) formatFields(fields LogFields) string {
 	return fieldsStr
 }
 
-func (f StdFormatter) Output(flags int, lvl string, fields LogFields, msg string) []byte {
+func (f StdFormatter) HasSettings() bool {
+	return false
+}
+
+func (f StdFormatter) Output(flags int, lvl string, fields LogFields, msg string) string {
 	buf := bytes.NewBufferString(f.formatFields(fields))
 	buf.WriteString(msg)
 
-	return buf.Bytes()
+	return buf.String()
 }
 
 type JsonFormatter struct {
@@ -141,11 +148,60 @@ func (f JsonFormatter) formatFields(fields LogFields) string {
 	return string(b)
 }
 
-func (f JsonFormatter) Output(flags int, lvl string, fields LogFields, msg string) []byte {
+func (f JsonFormatter) Output(flags int, lvl string, fields LogFields, msg string) string {
 	headersFields := f.createHeadersFields(flags)
 	msgFields := LogFields{"msg": msg, "level": lvl}
 	ff := f.formatFields(fields.Add(msgFields).Add(headersFields))
 	buf := bytes.NewBufferString(ff)
 
-	return buf.Bytes()
+	return buf.String()
+}
+
+func (f JsonFormatter) HasSettings() bool {
+	return true
+}
+
+func (l LogFields) MarshalJSON() ([]byte, error) {
+	var b []byte
+	buf := bytes.NewBuffer(b)
+	buf.WriteRune('{')
+
+	data := [][]interface{}{}
+	if v, ok := l["time"]; ok {
+		data = append(data, []interface{}{"time", v})
+		delete(l, "time")
+	}
+
+	if v, ok := l["level"]; ok {
+		data = append(data, []interface{}{"level", v})
+		delete(l, "level")
+	}
+
+	if v, ok := l["msg"]; ok {
+		data = append(data, []interface{}{"msg", v})
+		delete(l, "msg")
+	}
+
+	for key, val := range l {
+		data = append(data, []interface{}{key, val})
+	}
+
+	for i, d := range data {
+		km, err := json.Marshal(d[0])
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(km)
+		buf.WriteRune(':')
+		vm, err := json.Marshal(d[1])
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(vm)
+		if i != len(data)-1 {
+			buf.WriteRune(',')
+		}
+	}
+	buf.WriteRune('}')
+	return buf.Bytes(), nil
 }

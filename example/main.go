@@ -5,9 +5,7 @@ import (
 )
 
 func main() {
-	logger := log.NewJsonLogger()
-	// logger := log.NewStdLogger()
-	logger.SetLevel(log.LevelDefault | log.LevelDebug)
+	logger := log.NewStdLogger()
 	logger.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	logger.Debug("debug")

@@ -1,16 +1,34 @@
 package log_test
 
-import "github.com/bialas1993/log"
+import (
+	"os"
 
-func ExampleNewLogger() {
-	logger := log.NewStdLogger()
+	"github.com/bialas1993/log"
+)
 
-	logger.SetLevel(log.LevelDefault)
-	logger.SetFlags(0)
+func ExampleLogsLevel() {
+	os.Stderr = os.Stdout
+	l := log.New(nil)
+	l.SetFlags(log.Ldisable)
+	l.SetLevel(log.LevelDebug)
 
-	logger.Info("Info")
-	logger.Debug("Debug")
+	l.Error("error")
+	l.Errorf("%sf", "error")
+	l.Debug("debug")
+	l.Debugf("%sf", "debug")
+	l.Warning("warning")
+	l.Warningf("%sf", "warning")
+	l.Info("info")
+	l.Infof("%sf", "info")
+	// without fatal (system exit) and error (another writer os error)
 
 	// Output:
-	// INFO : Info
+	// ERROR: error
+	// ERROR: errorf
+	// DEBUG: debug
+	// DEBUG: debugf
+	// WARN : warning
+	// WARN : warningf
+	// INFO : info
+	// INFO : infof
 }
