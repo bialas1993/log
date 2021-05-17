@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	logger := log.NewStdLogger()
+	logger := log.NewColorLogger()
 	logger.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	logger.Debug("debug")
