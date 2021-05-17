@@ -12,10 +12,18 @@ import (
 )
 
 type Formatter interface {
-	// HasSettings method should return value to decide about override logger prefixes and log level flags
-	HasSettings() bool
 	// Output method should create a formatted string to display
 	Output(flags int, lvl string, fields LogFields, msg string) string
+
+	// HasFlags method should return value to decide about override log level flags
+	HasFlags() bool
+
+	// HasPrefixes method should return value to decide about override logger prefixes
+	HasPrefixes() bool
+
+	Flags() int
+
+	Prefixes() map[Level]string
 }
 
 type StdFormatter struct{}
@@ -52,8 +60,20 @@ func (f StdFormatter) formatFields(fields LogFields) string {
 	return fieldsStr
 }
 
-func (f StdFormatter) HasSettings() bool {
+func (f StdFormatter) HasFlags() bool {
 	return false
+}
+
+func (f StdFormatter) HasPrefixes() bool {
+	return false
+}
+
+func (f StdFormatter) Flags() int {
+	return 0
+}
+
+func (f StdFormatter) Prefixes() map[Level]string {
+	return nil
 }
 
 func (f StdFormatter) Output(flags int, lvl string, fields LogFields, msg string) string {
@@ -157,51 +177,54 @@ func (f JsonFormatter) Output(flags int, lvl string, fields LogFields, msg strin
 	return buf.String()
 }
 
-func (f JsonFormatter) HasSettings() bool {
+func (f JsonFormatter) HasFlags() bool {
 	return true
 }
 
-func (l LogFields) MarshalJSON() ([]byte, error) {
-	var b []byte
-	buf := bytes.NewBuffer(b)
-	buf.WriteRune('{')
+func (f JsonFormatter) HasPrefixes() bool {
+	return true
+}
 
-	data := [][]interface{}{}
-	if v, ok := l["time"]; ok {
-		data = append(data, []interface{}{"time", v})
-		delete(l, "time")
-	}
+func (f JsonFormatter) Flags() int {
+	return Ldisable
+}
 
-	if v, ok := l["level"]; ok {
-		data = append(data, []interface{}{"level", v})
-		delete(l, "level")
+func (f JsonFormatter) Prefixes() map[Level]string {
+	return map[Level]string{
+		LevelDebug:  "",
+		LevelError:  "",
+		LevelFatal:  "",
+		LevelWaring: "",
+		LevelInfo:   "",
 	}
+}
 
-	if v, ok := l["msg"]; ok {
-		data = append(data, []interface{}{"msg", v})
-		delete(l, "msg")
-	}
+type ColorizedStdFormatter struct {
+	StdFormatter
+}
 
-	for key, val := range l {
-		data = append(data, []interface{}{key, val})
-	}
+func (ColorizedStdFormatter) HasPrefixes() bool {
+	return true
+}
 
-	for i, d := range data {
-		km, err := json.Marshal(d[0])
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(km)
-		buf.WriteRune(':')
-		vm, err := json.Marshal(d[1])
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(vm)
-		if i != len(data)-1 {
-			buf.WriteRune(',')
-		}
+var (
+	CLR_0 = "\x1b[30;1m"
+	CLR_R = "\x1b[31;1m"
+	CLR_G = "\x1b[32;1m"
+	CLR_Y = "\x1b[33;1m"
+	CLR_B = "\x1b[34;1m"
+	CLR_M = "\x1b[35;1m"
+	CLR_C = "\x1b[36;1m"
+	CLR_W = "\x1b[37;1m"
+	RESET = "\x1b[0m"
+)
+
+func (ColorizedStdFormatter) Prefixes() map[Level]string {
+	return map[Level]string{
+		LevelDebug:  CLR_W + "DEBUG: " + RESET,
+		LevelError:  CLR_R + "ERROR: " + RESET,
+		LevelFatal:  CLR_R + "FATAL: " + RESET,
+		LevelWaring: CLR_Y + "WARN : " + RESET,
+		LevelInfo:   CLR_C + "INFO : " + RESET,
 	}
-	buf.WriteRune('}')
-	return buf.Bytes(), nil
 }

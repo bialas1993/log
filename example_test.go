@@ -8,7 +8,7 @@ import (
 
 func ExampleLogsLevel() {
 	os.Stderr = os.Stdout
-	l := log.New(nil)
+	l := log.NewColorLogger()
 	l.SetFlags(log.Ldisable)
 	l.SetLevel(log.LevelDebug)
 

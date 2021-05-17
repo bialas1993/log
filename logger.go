@@ -4,6 +4,8 @@
 package log
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -152,9 +154,16 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 	eLogs = append(eLogs, os.Stderr)
 
 	prefixDebug, prefixInfo, prefixWaring, prefixError, prefixFatal := tagDebug, tagInfo, tagWarning, tagError, tagFatal
-	if l.formatter.HasSettings() {
-		l.flags = Ldisable
-		prefixDebug, prefixInfo, prefixWaring, prefixError, prefixFatal = "", "", "", "", ""
+	if l.formatter.HasFlags() {
+		l.flags = l.formatter.Flags()
+	}
+	if l.formatter.HasPrefixes() {
+		prefixes := l.formatter.Prefixes()
+		prefixDebug = prefixes[LevelDebug]
+		prefixInfo = prefixes[LevelInfo]
+		prefixWaring = prefixes[LevelWaring]
+		prefixError = prefixes[LevelError]
+		prefixFatal = prefixes[LevelFatal]
 	}
 
 	l.debugLog = log.New(io.MultiWriter(dLogs...), prefixDebug, l.flags)
@@ -199,6 +208,11 @@ func NewJsonLogger(opts ...LogOption) Logger {
 	return new("", false, nil, append([]LogOption{WithFormatter(JsonFormatter{})}, opts...)...)
 }
 
+// NewJsonLogger with json formatter
+func NewColorLogger(opts ...LogOption) Logger {
+	return new("", false, nil, append([]LogOption{WithFormatter(ColorizedStdFormatter{})}, opts...)...)
+}
+
 // New create standard logger instance
 func New(out io.Writer, opts ...LogOption) Logger {
 	return new("", false, out, opts...)
@@ -232,6 +246,51 @@ func (l LogFields) Add(newFields LogFields) LogFields {
 	}
 
 	return resultFields
+}
+
+func (l LogFields) MarshalJSON() ([]byte, error) {
+	var b []byte
+	buf := bytes.NewBuffer(b)
+	buf.WriteRune('{')
+
+	data := [][]interface{}{}
+	if v, ok := l["time"]; ok {
+		data = append(data, []interface{}{"time", v})
+		delete(l, "time")
+	}
+
+	if v, ok := l["level"]; ok {
+		data = append(data, []interface{}{"level", v})
+		delete(l, "level")
+	}
+
+	if v, ok := l["msg"]; ok {
+		data = append(data, []interface{}{"msg", v})
+		delete(l, "msg")
+	}
+
+	for key, val := range l {
+		data = append(data, []interface{}{key, val})
+	}
+
+	for i, d := range data {
+		km, err := json.Marshal(d[0])
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(km)
+		buf.WriteRune(':')
+		vm, err := json.Marshal(d[1])
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(vm)
+		if i != len(data)-1 {
+			buf.WriteRune(',')
+		}
+	}
+	buf.WriteRune('}')
+	return buf.Bytes(), nil
 }
 
 func (l *logger) clear() {
@@ -366,7 +425,7 @@ func (l *logger) SetLevel(lvl Level) {
 }
 
 func (l *logger) SetFlags(flag int) {
-	if !l.formatter.HasSettings() {
+	if !l.formatter.HasFlags() {
 		l.debugLog.SetFlags(flag)
 		l.infoLog.SetFlags(flag)
 		l.warningLog.SetFlags(flag)
