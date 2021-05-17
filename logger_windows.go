@@ -17,13 +17,11 @@ type writer struct {
 // Write sends a log message to the Event Log.
 func (w *writer) Write(b []byte) (int, error) {
 	switch w.pri {
-	case sDebug:
-		return len(b), w.el.Debug(1, string(b))
-	case sInfo:
+	case LevelDebug, LevelInfo:
 		return len(b), w.el.Info(1, string(b))
-	case sWarning:
+	case LevelWarning:
 		return len(b), w.el.Warning(3, string(b))
-	case sError:
+	case LevelError, LevelPanic, LevelFatal:
 		return len(b), w.el.Error(2, string(b))
 	}
 	return 0, fmt.Errorf("unrecognized severity: %v", w.pri)
@@ -53,22 +51,26 @@ func newW(pri severity, src string) (*writer, error) {
 	}, nil
 }
 
-func setup(src string) (*writer, *writer, *writer, *writer, error) {
-	debugL, err := newW(sDebug, src)
+func setup(src string) (*writer, *writer, *writer, *writer, *writer, error) {
+	debugL, err := newW(LevelDebug, src)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
-	infoL, err := newW(sInfo, src)
+	infoL, err := newW(LevelInfo, src)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
-	warningL, err := newW(sWarning, src)
+	warningL, err := newW(LevelWarning, src)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
-	errL, err := newW(sError, src)
+	errL, err := newW(LevelError, src)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
-	return debugL, infoL, warningL, errL, nil
+	panicL, err := newW(LevelPanic, src)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	return debugL, infoL, warningL, errL, panicL, nil
 }
