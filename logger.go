@@ -19,6 +19,7 @@ type Level uint8
 // Output levels.
 const (
 	LevelFatal Level = iota
+	LevelPanic
 	LevelError
 	LevelWaring
 	LevelInfo
@@ -43,6 +44,7 @@ const (
 	tagInfo    = "INFO : "
 	tagWarning = "WARN : "
 	tagError   = "ERROR: "
+	tagPanic   = "PANIC: "
 	tagFatal   = "FATAL: "
 
 	initText         = "ERROR: Logging before logger.Init.\n"
@@ -54,6 +56,7 @@ var (
 	defaultLogger *logger
 	levelMap      = map[Level]string{
 		LevelFatal:  "fatal",
+		LevelPanic:  "panic",
 		LevelError:  "error",
 		LevelWaring: "warning",
 		LevelInfo:   "info",
@@ -71,6 +74,7 @@ type logger struct {
 	infoLog     *log.Logger
 	warningLog  *log.Logger
 	errorLog    *log.Logger
+	panicLog    *log.Logger
 	fatalLog    *log.Logger
 	formatter   Formatter
 	closers     []io.Closer
@@ -91,6 +95,7 @@ func initialize() {
 		infoLog:    log.New(os.Stderr, initText+tagInfo, Ldate|Lmicroseconds|Lshortfile),
 		warningLog: log.New(os.Stderr, initText+tagWarning, Ldate|Lmicroseconds|Lshortfile),
 		errorLog:   log.New(os.Stderr, initText+tagError, Ldate|Lmicroseconds|Lshortfile),
+		panicLog:   log.New(os.Stderr, initText+tagPanic, Ldate|Lmicroseconds|Lshortfile),
 		fatalLog:   log.New(os.Stderr, initText+tagFatal, Ldate|Lmicroseconds|Lshortfile),
 		formatter:  StdFormatter{},
 		fields:     LogFields{},
@@ -112,12 +117,12 @@ func init() {
 // If the logFile passed in also satisfies io.Closer, logFile.Close will be called
 // when closing the logger.
 func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *logger {
-	var dl, il, wl, el io.Writer
+	var dl, il, wl, el, pl io.Writer
 	var syslogErr error
-	dLogs, iLogs, wLogs, eLogs := []io.Writer{}, []io.Writer{}, []io.Writer{}, []io.Writer{}
+	dLogs, iLogs, wLogs, eLogs, pLogs := []io.Writer{}, []io.Writer{}, []io.Writer{}, []io.Writer{}, []io.Writer{}
 
 	if systemLog {
-		dl, il, wl, el, syslogErr = setup(name)
+		dl, il, wl, el, pl, syslogErr = setup(name)
 	}
 
 	if logFile != nil {
@@ -125,6 +130,7 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 		iLogs = append(iLogs, logFile)
 		wLogs = append(wLogs, logFile)
 		eLogs = append(eLogs, logFile)
+		pLogs = append(pLogs, logFile)
 	}
 
 	if dl != nil {
@@ -138,6 +144,9 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 	}
 	if el != nil {
 		eLogs = append(eLogs, el)
+	}
+	if pl != nil {
+		pLogs = append(pLogs, pl)
 	}
 
 	l := logger{
@@ -156,8 +165,9 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 	iLogs = append(iLogs, os.Stdout)
 	wLogs = append(wLogs, os.Stdout)
 	eLogs = append(eLogs, os.Stderr)
+	pLogs = append(pLogs, os.Stderr)
 
-	prefixDebug, prefixInfo, prefixWaring, prefixError, prefixFatal := tagDebug, tagInfo, tagWarning, tagError, tagFatal
+	prefixDebug, prefixInfo, prefixWaring, prefixError, prefixPanic, prefixFatal := tagDebug, tagInfo, tagWarning, tagError, tagPanic, tagFatal
 	if l.formatter.HasFlags() {
 		l.flags = l.formatter.Flags()
 	}
@@ -167,6 +177,7 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 		prefixInfo = prefixes[LevelInfo]
 		prefixWaring = prefixes[LevelWaring]
 		prefixError = prefixes[LevelError]
+		prefixPanic = prefixes[LevelPanic]
 		prefixFatal = prefixes[LevelFatal]
 	}
 
@@ -174,9 +185,10 @@ func new(name string, systemLog bool, logFile io.Writer, opts ...LogOption) *log
 	l.infoLog = log.New(io.MultiWriter(iLogs...), prefixInfo, l.flags)
 	l.warningLog = log.New(io.MultiWriter(wLogs...), prefixWaring, l.flags)
 	l.errorLog = log.New(io.MultiWriter(eLogs...), prefixError, l.flags)
+	l.panicLog = log.New(io.MultiWriter(pLogs...), prefixPanic, l.flags)
 	l.fatalLog = log.New(io.MultiWriter(eLogs...), prefixFatal, l.flags)
 
-	for _, w := range []io.Writer{logFile, il, wl, el} {
+	for _, w := range []io.Writer{logFile, il, wl, el, pl} {
 		if c, ok := w.(io.Closer); ok && c != nil {
 			l.closers = append(l.closers, c)
 		}
@@ -329,6 +341,8 @@ func (l *logger) output(s Level, depth int, txt string) {
 			l.warningLog.Output(3+depth, txt)
 		case LevelError:
 			l.errorLog.Output(3+depth, txt)
+		case LevelPanic:
+			l.panicLog.Output(3+depth, txt)
 		case LevelFatal:
 			l.fatalLog.Output(3+depth, txt)
 		}
@@ -346,6 +360,8 @@ type Logger interface {
 	Fatalf(format string, v ...interface{})
 	Error(v ...interface{})
 	Errorf(format string, v ...interface{})
+	Panic(v ...interface{})
+	Panicf(format string, v ...interface{})
 	SetLevel(lvl Level)
 	SetFlags(flag int)
 	With(fields LogFields) Logger
@@ -445,6 +461,24 @@ func (l *logger) Errorf(format string, v ...interface{}) {
 	l.output(LevelError, 0, string(l.formatter.Output(l.flags, levelMap[LevelError], l.fields, fmt.Sprintf(format, v...))))
 }
 
+// Panic logs with the Panic severity.
+// Arguments are handled in the manner of fmt.Print.
+func (l *logger) Panic(v ...interface{}) {
+	msg := fmt.Sprint(v...)
+	l.output(LevelPanic, 0, string(l.formatter.Output(l.flags, levelMap[LevelPanic], l.fields, msg)))
+	l.Close()
+	panic(msg)
+}
+
+// Panicf logs with the Panic severity.
+// Arguments are handled in the manner of fmt.Printf.
+func (l *logger) Panicf(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	l.output(LevelPanic, 0, string(l.formatter.Output(l.flags, levelMap[LevelPanic], l.fields, msg)))
+	l.Close()
+	panic(msg)
+}
+
 // SetLevel sets the logger verbosity level for verbose info logging.
 func (l *logger) SetLevel(lvl Level) {
 	l.level = lvl
@@ -456,6 +490,7 @@ func (l *logger) SetFlags(flag int) {
 		l.infoLog.SetFlags(flag)
 		l.warningLog.SetFlags(flag)
 		l.errorLog.SetFlags(flag)
+		l.panicLog.SetFlags(flag)
 		l.fatalLog.SetFlags(flag)
 	}
 
@@ -560,6 +595,24 @@ func Error(v ...interface{}) {
 func Errorf(format string, v ...interface{}) {
 	defaultLogger.bindContextFields()
 	defaultLogger.output(LevelError, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[LevelError], defaultLogger.fields, fmt.Sprintf(format, v...))))
+}
+
+// Panic uses the default logger and logs with the Panic severity.
+// Arguments are handled in the manner of fmt.Print.
+func Panic(v ...interface{}) {
+	msg := fmt.Sprint(v...)
+	defaultLogger.output(LevelPanic, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[LevelPanic], defaultLogger.fields, msg)))
+	defaultLogger.Close()
+	panic(msg)
+}
+
+// Panicf uses the default logger and logs with the Panic severity.
+// Arguments are handled in the manner of fmt.Printf.
+func Panicf(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	defaultLogger.output(LevelPanic, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[LevelPanic], defaultLogger.fields, msg)))
+	defaultLogger.Close()
+	panic(msg)
 }
 
 // With uses the default logger and store context fields for log

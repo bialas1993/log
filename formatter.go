@@ -222,6 +222,7 @@ var (
 func (ColorizedStdFormatter) Prefixes() map[Level]string {
 	return map[Level]string{
 		LevelDebug:  CLR_W + "DEBUG: " + RESET,
+		LevelPanic:  CLR_0 + "PANIC: " + RESET,
 		LevelError:  CLR_R + "ERROR: " + RESET,
 		LevelFatal:  CLR_R + "FATAL: " + RESET,
 		LevelWaring: CLR_Y + "WARN : " + RESET,

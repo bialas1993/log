@@ -23,5 +23,6 @@ func main() {
 	}).Info("info")
 	logger.Warning("warn")
 	logger.Error("error")
+	logger.With(log.LogFields{"test": "check"}).Panic("panic")
 	logger.Fatal("fatal")
 }
