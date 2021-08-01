@@ -464,6 +464,7 @@ func (l *logger) Errorf(format string, v ...interface{}) {
 // Panic logs with the Panic severity.
 // Arguments are handled in the manner of fmt.Print.
 func (l *logger) Panic(v ...interface{}) {
+	l.bindContextFields()
 	msg := fmt.Sprint(v...)
 	l.output(LevelPanic, 0, string(l.formatter.Output(l.flags, levelMap[LevelPanic], l.fields, msg)))
 	l.Close()
@@ -473,6 +474,7 @@ func (l *logger) Panic(v ...interface{}) {
 // Panicf logs with the Panic severity.
 // Arguments are handled in the manner of fmt.Printf.
 func (l *logger) Panicf(format string, v ...interface{}) {
+	l.bindContextFields()
 	msg := fmt.Sprintf(format, v...)
 	l.output(LevelPanic, 0, string(l.formatter.Output(l.flags, levelMap[LevelPanic], l.fields, msg)))
 	l.Close()
@@ -600,6 +602,7 @@ func Errorf(format string, v ...interface{}) {
 // Panic uses the default logger and logs with the Panic severity.
 // Arguments are handled in the manner of fmt.Print.
 func Panic(v ...interface{}) {
+	defaultLogger.bindContextFields()
 	msg := fmt.Sprint(v...)
 	defaultLogger.output(LevelPanic, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[LevelPanic], defaultLogger.fields, msg)))
 	defaultLogger.Close()
@@ -609,6 +612,7 @@ func Panic(v ...interface{}) {
 // Panicf uses the default logger and logs with the Panic severity.
 // Arguments are handled in the manner of fmt.Printf.
 func Panicf(format string, v ...interface{}) {
+	defaultLogger.bindContextFields()
 	msg := fmt.Sprintf(format, v...)
 	defaultLogger.output(LevelPanic, 0, string(defaultLogger.formatter.Output(defaultLogger.flags, levelMap[LevelPanic], defaultLogger.fields, msg)))
 	defaultLogger.Close()
